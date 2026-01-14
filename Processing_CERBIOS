@@ -1,0 +1,129 @@
+### 1- Entro nel server remoto e creo cartelle che mi servono
+
+ssh sarab@150.217.116.115
+cd /data2-new/SaraB
+
+mkdir CERBIOS 
+cd CERBIOS
+mkdir output_CERBIOS
+
+### 2- Importo i files nel server remoto
+exit
+cd ../../media
+scp -r leandro/Expansion/CERBIOS sarab@150.217.116.115:/data2-new/SaraB/CERBIOS
+
+### 3- Importo files in qiime2
+(QIIME 2 version: 2021.4) #versione qiime2 su server Magi
+
+ssh sarab@150.217.116.115
+cd /data2-new/SaraB/CERBIOS
+conda activate qiime2-2021.4
+
+
+-----------
+source /data2-new/SaraB/miniconda3/etc/profile.d/conda.sh
+conda activate qiime2-2021.4
+
+qiime tools import --type 'SampleData[PairedEndSequencesWithQuality]' --input-path CERBIOS --input-format CasavaOneEightSingleLanePerSampleDirFmt --output-path output_CERBIOS/paired-end-demux.qza
+
+qiime cutadapt trim-paired --i-demultiplexed-sequences output_CERBIOS/paired-end-demux.qza --p-front-f CCTACGGGNGGCWGCAG --p-front-r GACTACHVGGGTATCTAATCC --p-discard-untrimmed --o-trimmed-sequences output_CERBIOS/trim-seqs.qza --p-cores 25 --verbose > output_CERBIOS/cutadapt_summary.txt
+
+------------
+nohup bash cerbios.sh &
+htop -u sarab
+
+qiime demux summarize --i-data output_CERBIOS/trim-seqs.qza --o-visualization output_CERBIOS/quality --p-n 100000 
+
+
+exit 
+cd Scrivania/SARA/CERBIOS
+
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/quality.qzv . 
+
+### 6- DADA2 cut
+ssh sarab@150.217.116.115
+cd /data2-new/SaraB/CERBIOS/output_CERBIOS
+conda activate qiime2-2021.4
+
+# file .sh creato su nano per essere eseguito:
+
+--------
+source /data2-new/SaraB/miniconda3/etc/profile.d/conda.sh
+conda activate qiime2-2021.4
+
+qiime dada2 denoise-paired --i-demultiplexed-seqs trim-seqs.qza --p-trunc-len-f 253 --p-trunc-len-r 219 --o-table Featuredada.qza --o-representative-sequences data-trunc.qza --o-denoising-stats denoising-stats.qza --p-n-threads 10
+
+qiime metadata tabulate --m-input-file denoising-stats.qza --o-visualization stats-dada2.qzv
+---------
+
+# una volta chiuso e salvato come scrc.sh ho lanciato questo sulla bash ssh:
+nohup bash cerbios.sh &
+htop -u sarab
+
+exit
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/stats-dada2.qzv . 
+
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/Featuredada.qza . 
+
+ssh sarab@150.217.116.115
+cd /data2-new/SaraB/CERBIOS/output_CERBIOS
+conda activate qiime2-2021.4
+
+qiime tools export --input-path data-trunc.qza --output-path .  #file da usare in Bowtie2
+
+bowtie2 -x ../../Tools/INDEXED_GRCh38_analysis_set_BOWTIE2/GRCh38_noalt_as  -U dna-sequences.fasta --un filtered.fasta -S vat.txt  -f -p 5 --al bowtie_fail.txt
+
+qiime tools import --type FeatureData[Sequence] --input-path filtered.fasta --output-path import_filtered
+
+-----------------------------------------------------------------------------------
+source /data2-new/SaraB/miniconda3/etc/profile.d/conda.sh
+
+conda activate qiime2-2021.4
+
+qiime feature-classifier classify-sklearn --i-classifier ../../Tools/SILVA_138_V3V4_BayesClassifier.qza --i-reads import_filtered.qza --o-classification taxonomy.qza
+-----------------------------------------------------------------------------------
+nohup bash cerbios.sh &
+htop -u sarab
+
+
+
+
+
+
+
+
+exit
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/taxonomy.qza .
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/filtered.fasta . #per eventuale picrust
+
+
+
+
+
+#conta reads iniziali
+for file in *.fastq.gz; do
+    output="${file%.gz}"
+    gunzip -c "$file" > "$output"
+    echo "Decompresso: $file -> $output"
+done
+
+for forward in *_R1_*.fastq; do
+    reverse=${forward/_R1_/_R2_}
+    forward_count=$(grep -c '^@' "$forward")
+    reverse_count=$(grep -c '^@' "$reverse")
+    sample_name=$(echo "$forward" | sed 's/_R1_.*//')
+    echo -e "$sample_name\t$forward_count\t$reverse_count" >> read_counts.txt
+done
+
+
+scp sarab@150.217.116.115:/data2-new/SaraB/CERBIOS/output_CERBIOS/read_counts.txt .
+
+
+
+
+
+
+
+
+
+
